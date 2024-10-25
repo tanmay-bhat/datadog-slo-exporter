@@ -63,6 +63,9 @@ var (
 )
 
 func InitDataDogClient() error {
+    if API_KEY == "" || APP_KEY == "" {
+        return fmt.Errorf("API_KEY or APP_KEY is missing")
+    }
 	ctx = context.WithValue(context.Background(), datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
 			"apiKeyAuth": {Key: API_KEY},
@@ -107,8 +110,8 @@ func GetSloData(sloDataID string, daysWindow int) (float64, string, float64, str
 func main() {
 	logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
 
-	if API_KEY == "" || APP_KEY == "" || SLO_ID == "" || PROM_ENDPOINT == "" {
-		logger.Fatal("Required environment variables (API_KEY, APP_KEY, SLO_ID, PROM_ENDPOINT) are not set")
+	if SLO_ID == "" || PROM_ENDPOINT == "" {
+		logger.Fatal("Required environment variables (SLO_ID, PROM_ENDPOINT) are not set")
 	}
 
 	err := InitDataDogClient()
