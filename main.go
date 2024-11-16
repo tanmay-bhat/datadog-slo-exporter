@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -15,30 +14,11 @@ import (
 	"github.com/prometheus/client_golang/prometheus/push"
 )
 
-type Response struct {
-	Data Data `json:"data"`
-}
-
-type Data struct {
-	Overall Overall `json:"overall"`
-	Slo     Slo     `json:"slo"`
-}
-
-type Overall struct {
-	Name string  `json:"name"`
-	SLI  float64 `json:"sli_value"`
-}
-
-type Slo struct {
-	Threshold float64 `json:"target_threshold"`
-	Timeframe string  `json:"timeframe"`
-}
-
 var (
-	API_KEY       = os.Getenv("DD_API_KEY")
-	APP_KEY       = os.Getenv("DD_APP_KEY")
-	SLO_ID        = os.Getenv("DD_SLO_ID")
-	PROM_ENDPOINT = os.Getenv("PROMETHEUS_ENDPOINT")
+	DD_API_KEY          = os.Getenv("DD_API_KEY")
+	DD_APP_KEY          = os.Getenv("DD_APP_KEY")
+	DD_SLO_ID           = os.Getenv("DD_SLO_ID")
+	PROMETHEUS_ENDPOINT = os.Getenv("PROMETHEUS_ENDPOINT")
 
 	ctx       context.Context
 	api       *datadogV1.ServiceLevelObjectivesApi
@@ -63,13 +43,10 @@ var (
 )
 
 func InitDataDogClient() error {
-    if API_KEY == "" || APP_KEY == "" {
-        return fmt.Errorf("API_KEY or APP_KEY is missing")
-    }
 	ctx = context.WithValue(context.Background(), datadog.ContextAPIKeys,
 		map[string]datadog.APIKey{
-			"apiKeyAuth": {Key: API_KEY},
-			"appKeyAuth": {Key: APP_KEY},
+			"apiKeyAuth": {Key: DD_API_KEY},
+			"appKeyAuth": {Key: DD_APP_KEY},
 		},
 	)
 
@@ -94,24 +71,20 @@ func GetSloData(sloDataID string, daysWindow int) (float64, string, float64, str
 		return 0, "", 0, "", fmt.Errorf("error when calling `ServiceLevelObjectivesApi.GetSLOHistory`: %v", err)
 	}
 
-	responseContent, err := json.Marshal(resp)
-	if err != nil {
-		return 0, "", 0, "", fmt.Errorf("error marshaling response: %v", err)
+	var target float64
+	var timeframe string
+	for _, threshold := range resp.Data.Thresholds {
+		target = threshold.Target
+		timeframe = string(threshold.GetTimeframe())
 	}
-
-	var response Response
-	if err = json.Unmarshal(responseContent, &response); err != nil {
-		return 0, "", 0, "", fmt.Errorf("error unmarshaling JSON: %v", err)
-	}
-
-	return response.Data.Overall.SLI, response.Data.Overall.Name, response.Data.Slo.Threshold, response.Data.Slo.Timeframe, nil
+	return *resp.Data.Overall.SliValue.Get(), *resp.Data.Overall.Name, target, timeframe, nil
 }
 
 func main() {
 	logger = log.New(os.Stdout, "", log.Ldate|log.Ltime|log.Lshortfile)
 
-	if SLO_ID == "" || PROM_ENDPOINT == "" {
-		logger.Fatal("Required environment variables (SLO_ID, PROM_ENDPOINT) are not set")
+	if DD_API_KEY == "" || DD_APP_KEY == "" || DD_SLO_ID == "" || PROMETHEUS_ENDPOINT == "" {
+		logger.Fatal("Required environment variables (DD_API_KEY, DD_APP_KEY, DD_SLO_ID, PROMETHEUS_ENDPOINT) are not set")
 	}
 
 	err := InitDataDogClient()
@@ -129,7 +102,7 @@ func main() {
 
 	for _, day := range days {
 		logger.Printf("Fetching SLO history for %d days\n", day)
-		sliValue, sloName, threshold, rollingTimeframe, err := GetSloData(SLO_ID, day)
+		sliValue, sloName, threshold, rollingTimeframe, err := GetSloData(DD_SLO_ID, day)
 
 		if err != nil {
 			logger.Printf("Error getting SLO data: %v\n", err)
@@ -144,7 +117,7 @@ func main() {
 		}
 	}
 
-	pusher := push.New(PROM_ENDPOINT, "datadog-slo-exporter").Gatherer(registry)
+	pusher := push.New(PROMETHEUS_ENDPOINT, "datadog-slo-exporter").Gatherer(registry)
 
 	if err := pusher.Push(); err != nil {
 		logger.Printf("Error pushing metrics to VictoriaMetrics: %v\n", err)
