@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 	"os"
@@ -15,24 +14,24 @@ import (
 	"github.com/prometheus/client_golang/prometheus/push"
 )
 
-type Response struct {
-	Data Data `json:"data"`
-}
+// type Response struct {
+// 	Data Data `json:"data"`
+// }
 
-type Data struct {
-	Overall Overall `json:"overall"`
-	Slo     Slo     `json:"slo"`
-}
+// type Data struct {
+// 	Overall Overall `json:"overall"`
+// 	Slo     Slo     `json:"slo"`
+// }
 
-type Overall struct {
-	Name string  `json:"name"`
-	SLI  float64 `json:"sli_value"`
-}
+// type Overall struct {
+// 	Name string  `json:"name"`
+// 	SLI  float64 `json:"sli_value"`
+// }
 
-type Slo struct {
-	Threshold float64 `json:"target_threshold"`
-	Timeframe string  `json:"timeframe"`
-}
+// type Slo struct {
+// 	Threshold float64 `json:"target_threshold"`
+// 	Timeframe string  `json:"timeframe"`
+// }
 
 var (
 	DD_API_KEY          = os.Getenv("DD_API_KEY")
@@ -91,17 +90,18 @@ func GetSloData(sloDataID string, daysWindow int) (float64, string, float64, str
 		return 0, "", 0, "", fmt.Errorf("error when calling `ServiceLevelObjectivesApi.GetSLOHistory`: %v", err)
 	}
 
-	responseContent, err := json.Marshal(resp)
-	if err != nil {
-		return 0, "", 0, "", fmt.Errorf("error marshaling response: %v", err)
+	//resp is of type SLOHistoryResponse struct which contains data in form of a list of obejects Data
+	var target float64
+	var timeframe string
+	for _, threshold := range resp.Data.Thresholds {
+		target = threshold.Target
+		timeframe = string(threshold.GetTimeframe())
 	}
+	//fmt.Printf("Threshold: %v\n", resp.Data.Thresholds[0].Timeframe)
 
-	var response Response
-	if err = json.Unmarshal(responseContent, &response); err != nil {
-		return 0, "", 0, "", fmt.Errorf("error unmarshaling JSON: %v", err)
-	}
-
-	return response.Data.Overall.SLI, response.Data.Overall.Name, response.Data.Slo.Threshold, response.Data.Slo.Timeframe, nil
+	fmt.Printf("SLO Name: %v\n, SLI Value: %v\n, Target: %v\n, Timeframe: %v\n", *resp.Data.Overall.Name, *resp.Data.Overall.SliValue.Get(), target, timeframe)
+	return *resp.Data.Overall.SliValue.Get(), *resp.Data.Overall.Name, target, timeframe, nil
+	//return response.Data.Overall.SLI, response.Data.Overall.Name, response.Data.Slo.Threshold, response.Data.Slo.Timeframe, nil
 }
 
 func main() {
